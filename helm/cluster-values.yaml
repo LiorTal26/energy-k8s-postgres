@@ -1,0 +1,74 @@
+# Percona Operator and component versions are intentionally pinned for a
+# repeatable review. See README.md for the upgrade strategy and trade-offs.
+fullnameOverride: energy-pg
+crVersion: 3.0.0
+image: docker.io/percona/percona-distribution-postgresql:17.10-1
+imagePullPolicy: IfNotPresent
+postgresVersion: 17
+
+users:
+  - name: energyapp
+    databases:
+      - energydb
+    grantPublicSchemaAccess: true
+    password:
+      type: AlphaNumeric
+
+instances:
+  - name: instance1
+    replicas: 2
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                postgres-operator.crunchydata.com/cluster: energy-pg
+                postgres-operator.crunchydata.com/data: postgres
+            topologyKey: kubernetes.io/hostname
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+    dataVolumeClaimSpec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
+
+proxy:
+  pgBouncer:
+    replicas: 1
+    image: docker.io/percona/percona-pgbouncer:1.25.2-1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+backups:
+  enabled: true
+  trackLatestRestorableTime: true
+  pgbackrest:
+    image: docker.io/percona/percona-pgbackrest:2.58.0-2
+    global:
+      repo1-retention-full: "1"
+    repos:
+      - name: repo1
+        schedules:
+          full: "0 2 * * 0"
+        volume:
+          volumeClaimSpec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+
+pmm:
+  enabled: false

@@ -1,0 +1,83 @@
+name: E2E Integration & Verification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  KUBECONFIG: ${{ github.workspace }}/.tools/kubeconfig
+
+jobs:
+  e2e-test:
+    name: Kind Cluster & PostgreSQL E2E Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Install kind
+        run: |
+          curl --fail --silent --show-error --location --output kind-linux-amd64 \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64
+          curl --fail --silent --show-error --location --output kind-linux-amd64.sha256sum \
+            https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
+          sha256sum --check kind-linux-amd64.sha256sum
+          sudo install -m 0755 kind-linux-amd64 /usr/local/bin/kind
+          kind version
+
+      - name: Setup Helm
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.16.3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.34.1
+
+      - name: Validate Bash syntax
+        run: bash -n scripts/bash/*.sh
+
+      - name: Bootstrap Environment (Kind, Operator, PostgreSQL)
+        run: bash scripts/bash/bootstrap.sh
+
+      - name: Run E2E Verification & SQL Smoke Test
+        run: bash scripts/bash/verify.sh
+
+      - name: Run Pod Failover & Operator Self-Healing Test
+        run: bash scripts/bash/test-failover.sh
+
+      - name: Run NetworkPolicy Security Verification
+        run: bash scripts/bash/test-network-policy.sh
+
+      - name: Capture Diagnostics on Failure
+        if: failure()
+        run: |
+          echo "=== Nodes ==="
+          kubectl get nodes -o wide || true
+          echo "=== Pods & PVCs ==="
+          kubectl -n postgres-operator get pods,pvc -o wide || true
+          echo "=== PG Custom Resource ==="
+          kubectl -n postgres-operator describe pg energy-pg || true
+          echo "=== Operator Logs ==="
+          kubectl -n postgres-operator logs deployment/percona-operator-pg-operator --tail=100 || true
+          echo "=== Smoke Test Job Logs ==="
+          kubectl -n postgres-operator logs job/postgres-smoke-test --all-containers=true || true
+
+      - name: Cleanup Cluster
+        if: always()
+        run: bash scripts/bash/destroy.sh --force

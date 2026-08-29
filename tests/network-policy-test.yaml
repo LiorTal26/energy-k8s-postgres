@@ -1,0 +1,149 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: np-authorized-probe
+  namespace: postgres-operator
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 90
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-smoke-test
+        app.kubernetes.io/component: network-policy-probe
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          image: docker.io/percona/percona-distribution-postgresql:17.10-1
+          imagePullPolicy: IfNotPresent
+          command:
+            - psql
+          args:
+            - -v
+            - ON_ERROR_STOP=1
+            - -c
+            - SELECT 'AUTHORIZED_ACCESS_ALLOWED' AS status;
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: pgbouncer-host
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: pgbouncer-port
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: user
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: password
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: dbname
+            - name: PGCONNECT_TIMEOUT
+              value: "5"
+            - name: PGSSLMODE
+              value: require
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: np-unauthorized-probe
+  namespace: postgres-operator
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 90
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: untrusted-database-client
+        app.kubernetes.io/component: network-policy-probe
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          image: docker.io/percona/percona-distribution-postgresql:17.10-1
+          imagePullPolicy: IfNotPresent
+          command:
+            - psql
+          args:
+            - -v
+            - ON_ERROR_STOP=1
+            - -c
+            - SELECT 'UNAUTHORIZED_ACCESS_REACHED' AS status;
+          env:
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: pgbouncer-host
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: pgbouncer-port
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: user
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: password
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: energy-pg-pguser-energyapp
+                  key: dbname
+            - name: PGCONNECT_TIMEOUT
+              value: "5"
+            - name: PGSSLMODE
+              value: require
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true

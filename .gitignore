@@ -1,0 +1,18 @@
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local tools and generated evidence
+.tools/
+artifacts/
+tmp/
+
+# Local Kubernetes files should never be committed
+kubeconfig*
+*.kubeconfig
+
+
+# Private notes
+PREPARATION_PLAN.md
+1v.html

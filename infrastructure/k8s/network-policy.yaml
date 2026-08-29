@@ -1,0 +1,82 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pgbouncer-access
+  namespace: postgres-operator
+spec:
+  podSelector:
+    matchLabels:
+      postgres-operator.crunchydata.com/role: pgbouncer
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Allow internal traffic from authorized applications & smoke test
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres-smoke-test
+        - podSelector:
+            matchLabels:
+              role: api-client
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 2. Allow communication from Operator controller
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pg-operator
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-internal
+  namespace: postgres-operator
+spec:
+  podSelector:
+    matchLabels:
+      postgres-operator.crunchydata.com/data: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Allow pgBouncer to connect to PostgreSQL instances
+    - from:
+        - podSelector:
+            matchLabels:
+              postgres-operator.crunchydata.com/role: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 2. Allow intra-cluster Patroni replication and health checks between DB instances
+    - from:
+        - podSelector:
+            matchLabels:
+              postgres-operator.crunchydata.com/data: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8008
+    # 3. Allow pgBackRest repository host for backups
+    - from:
+        - podSelector:
+            matchLabels:
+              postgres-operator.crunchydata.com/role: pgbackrest
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8008
+    # 4. Allow Operator controller reconciliation probes
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pg-operator
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8008

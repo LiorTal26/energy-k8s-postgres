@@ -1,0 +1,16 @@
+# The Operator watches only its release namespace. This keeps the exercise
+# isolated and applies least privilege at the namespace boundary.
+image: docker.io/percona/percona-postgresql-operator:3.0.0
+imagePullPolicy: IfNotPresent
+watchAllNamespaces: false
+disableTelemetry: true
+logStructured: true
+logLevel: INFO
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
