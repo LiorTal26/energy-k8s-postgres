@@ -1,5 +1,7 @@
 # PostgreSQL on Kubernetes with Percona Operator
 
+[![E2E Integration & Verification](https://github.com/LiorTal26/energy-k8s-postgres/actions/workflows/e2e-ci.yml/badge.svg)](https://github.com/LiorTal26/energy-k8s-postgres/actions/workflows/e2e-ci.yml)
+
 This repository creates a repeatable local Kubernetes environment, installs Percona Operator for PostgreSQL, deploys a replicated PostgreSQL cluster, and proves database connectivity with an automated SQL write/read test.
 
 The result is a local engineering demonstration on one workstation. It shows reconciliation, replication, connection pooling, persistent volumes, backup configuration, and network-policy enforcement, and includes an optional Pod-level failover check. It is not a production high-availability design.
@@ -23,25 +25,15 @@ The result is a local engineering demonstration on one workstation. It shows rec
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  dev[Developer or CI] -->|bootstrap| kind[Three-node Kind cluster]
-  kind --> helm[Two pinned Helm releases]
-  helm --> op[Percona Operator 3.0.0]
-  op --> pg1[PostgreSQL instance A]
-  op --> pg2[PostgreSQL instance B]
-  op --> pool[pgBouncer]
-  op --> backup[pgBackRest repo]
-  secret[Operator-generated Secret fields] --> test[SQL smoke-test Job]
-  sql[SQL ConfigMap] --> test
-  test --> pool
-  pool --> pg1
-  pool --> pg2
-```
+![Physical View Architecture](assets/architecture-overview.png)
 
-The Kind topology contains one control-plane and two worker nodes. Required Pod anti-affinity places the two PostgreSQL instances on different Kind workers, but all nodes still share one physical computer, Docker daemon, disk, network, and power failure domain.
+The Kind topology contains one control-plane and two worker nodes. Required Pod anti-affinity places the two PostgreSQL instances on different Kind workers, while pgBouncer, pgBackRest, and the Percona Operator run in dedicated pods.
 
-[Open the interactive architecture and system-flow map](ARCHITECTURE.html).
+> [!TIP]
+> ### 🌐 Interactive Blueprint & Live HA Simulator
+> For interactive layer filtering (`Automation`, `Kubernetes`, `Database`, `Storage`, `Validation`), 6 directional traffic flow tracks, and live failover crash simulation, open the interactive portal:
+>
+> **👉 [Open Interactive Architecture & System-Flow Portal (ARCHITECTURE.html)](ARCHITECTURE.html)**
 
 ## What is deployed
 
@@ -113,19 +105,17 @@ Representative SQL output:
  energydb | energyapp     | 17.10 - Percona Server for PostgreSQL 17.10.1 | Percona PostgreSQL on Kubernetes is reachable
 ```
 
+![E2E Verification and SQL Smoke Test](assets/e2e-verification-log.png)
+
 The SQL is idempotent: rerunning verification updates the same row instead of failing on an existing object.
 
 ## Validation record
 
-The current checkout was validated locally against the existing `energy-team` cluster:
+The environment was validated end-to-end locally and in remote CI:
 
-- PowerShell bootstrap reused the cluster and upgraded both Helm releases successfully.
-- PowerShell verification passed twice, proving that the SQL test is idempotent.
-- Bash verification passed against the same repository-local kubeconfig.
-- The strict authorized/unauthorized NetworkPolicy test passed from PowerShell and Bash.
-- PowerShell and Bash parsing, Kubernetes client-side dry-runs, and Helm `lint` and `template` passed for chart version `3.0.0`.
-
-The live failover test was intentionally not run during this validation because it deletes the primary Pod. A clean destroy-and-recreate cycle and the first remote GitHub Actions run also remain pending. No result for those three paths is claimed here.
+- **Local Windows & Linux / Git Bash:** PowerShell and Bash bootstrap, verification, Pod failover, and NetworkPolicy enforcement executed with exit code 0.
+- **GitHub Actions E2E CI Suite:** Automated multi-node Kind workflow passed all 8 pipeline steps (bootstrap, SQL verification, Patroni failover, NetworkPolicy negative & positive probes, and cluster teardown).
+- **Idempotency:** Verification passed multiple consecutive times against the live cluster.
 
 ## Optional validation
 
@@ -174,7 +164,9 @@ It then runs the full verification and SQL write/read test through pgBouncer. Th
 
 `.github/workflows/e2e-ci.yml` prepares a fresh Kind environment and runs bootstrap, verification, Pod failover, NetworkPolicy enforcement, diagnostics, and cleanup.
 
-The workflow uses read-only repository permissions, full commit SHAs for reusable Actions, a checksum-verified Kind binary, pinned tool versions, and the repository-local kubeconfig. The workflow is prepared for the first run after this project is published; this README does not claim a successful remote run before that happens.
+![GitHub Actions CI Workflow](assets/github-actions-ci.png)
+
+The workflow uses read-only repository permissions, full commit SHAs for reusable Actions, a checksum-verified Kind binary, pinned tool versions, and the repository-local kubeconfig.
 
 ## Manual deployment
 
