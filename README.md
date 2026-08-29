@@ -34,6 +34,8 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 > For interactive layer filtering (`Automation`, `Kubernetes`, `Database`, `Storage`, `Validation`), 6 directional traffic flow tracks, and live failover crash simulation, open the interactive portal:
 >
 > **👉 [Open Interactive Architecture & System-Flow Portal (ARCHITECTURE.html)](ARCHITECTURE.html)**
+>
+> *To view locally: double-click `ARCHITECTURE.html` in your file explorer or run `Start-Process ./ARCHITECTURE.html` in PowerShell (`open ./ARCHITECTURE.html` on macOS / `xdg-open` on Linux).*
 
 ## What is deployed
 
@@ -104,8 +106,6 @@ Representative SQL output:
 ----------+---------------+-----------------------------------------------+-----------------------------------------------
  energydb | energyapp     | 17.10 - Percona Server for PostgreSQL 17.10.1 | Percona PostgreSQL on Kubernetes is reachable
 ```
-
-![E2E Verification and SQL Smoke Test](assets/e2e-verification-log.png)
 
 The SQL is idempotent: rerunning verification updates the same row instead of failing on an existing object.
 
