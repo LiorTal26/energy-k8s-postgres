@@ -2,9 +2,23 @@ name: E2E Integration & Verification
 
 on:
   push:
-    branches: [main, master]
+    branches: main
+    paths-ignore:
+      - "**.md"
+      - "ARCHITECTURE.html"
+      - "assets/**"
+      - ".gitignore"
+      - ".editorconfig"
+      - ".gitattributes"
   pull_request:
-    branches: [main, master]
+    branches: main
+    paths-ignore:
+      - "**.md"
+      - "ARCHITECTURE.html"
+      - "assets/**"
+      - ".gitignore"
+      - ".editorconfig"
+      - ".gitattributes"
   workflow_dispatch:
 
 concurrency:

@@ -25,7 +25,7 @@ The result is a local engineering demonstration on one workstation. It shows rec
 
 ## Architecture
 
-![Physical View Architecture](assets/architecture-overview.png)
+![Physical View Architecture](assets/architecture-blueprint.png)
 
 The Kind topology contains one control-plane and two worker nodes. Required Pod anti-affinity places the two PostgreSQL instances on different Kind workers, while pgBouncer, pgBackRest, and the Percona Operator run in dedicated pods.
 
