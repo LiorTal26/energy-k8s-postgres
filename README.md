@@ -526,7 +526,8 @@ Each database instance has a 1 GiB data PVC and pgBackRest has a 1 GiB repositor
 3. **Enterprise Storage & Multi-AZ CSI:** Transition from local-path to a cloud-native CSI (e.g. AWS EBS/EFS, Azure Managed Disk, or NetApp Trident when hardware exists) across distinct Availability Zones.
 4. **Full Observability & PMM Integration:** Deploy Percona Monitoring and Management (PMM) or a Prometheus/Grafana stack with alerting on replication lag, connection pool saturation, query latency, and PVC disk utilization.
 5. **Secrets Lifecycle & External KMS:** Integrate HashiCorp Vault / Azure Key Vault with automatic credential rotation, envelope encryption at rest, and short-lived database tokens.
-6. **Supply Chain Security:** Enforce cosign image signature verification, SLSA provenance, and vulnerability scanning in CI before deployment.
+6. **Multi-Cluster Management & Governance (e.g., SUSE Rancher / Azure Arc):** Deploy a centralized enterprise management platform such as Rancher to manage multiple Kubernetes clusters, streamline fleet-wide RBAC, enforce OPA/Gatekeeper compliance policies, and simplify Day-2 operations.
+7. **Supply Chain Security:** Enforce cosign image signature verification, SLSA provenance, and vulnerability scanning in CI before deployment.
 
 Components like Redis, PostgREST, Jenkins, Harbor, and Trident are omitted from this exercise to avoid artificial bloat without an actual production requirement.
 
