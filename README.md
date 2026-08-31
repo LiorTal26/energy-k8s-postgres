@@ -6,9 +6,11 @@ This repository creates a repeatable local Kubernetes environment, installs Perc
 
 The result is a local engineering demonstration on one workstation. It shows reconciliation, replication, connection pooling, persistent volumes, backup configuration, and network-policy enforcement, and includes an optional Pod-level failover check. It is not a production high-availability design.
 
+
 ## Contents
 
 - [Architecture](#architecture)
+- [Repository layout](#repository-layout)
 - [What is deployed](#what-is-deployed)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
@@ -21,7 +23,6 @@ The result is a local engineering demonstration on one workstation. It shows rec
 - [Limitations and production evolution](#limitations-and-production-evolution)
 - [Troubleshooting](#troubleshooting)
 - [Cleanup](#cleanup)
-- [Repository layout](#repository-layout)
 
 ## Architecture
 
@@ -36,6 +37,28 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 > **👉 [Open Interactive Architecture & System-Flow Portal (ARCHITECTURE.html)](ARCHITECTURE.html)**
 >
 > *To view locally: double-click `ARCHITECTURE.html` in your file explorer or run `Start-Process ./ARCHITECTURE.html` in PowerShell (`open ./ARCHITECTURE.html` on macOS / `xdg-open` on Linux).*
+
+## Repository layout
+
+```text
+.
+|-- .github/workflows/e2e-ci.yml       # Prepared ephemeral Kind E2E workflow
+|-- helm/
+|   |-- operator-values.yaml           # Namespace-scoped Operator configuration
+|   `-- cluster-values.yaml            # PostgreSQL, pgBouncer, PVC, and backup desired state
+|-- infrastructure/
+|   |-- kind/cluster.yaml              # Pinned three-node Kind topology
+|   `-- k8s/network-policy.yaml        # PostgreSQL and pgBouncer ingress policy
+|-- scripts/
+|   |-- powershell/                    # Primary Windows automation and validation
+|   `-- bash/                          # Linux, macOS, Git Bash, and CI equivalents
+|-- tests/
+|   |-- smoke-test.yaml                # Secret-backed idempotent SQL Job
+|   |-- network-policy-test.yaml       # Authorized and unauthorized policy probes
+|   `-- query.sql                      # Optional workstation query
+|-- ARCHITECTURE.html                  # Interactive architecture and flow map
+`-- README.md
+```
 
 ## What is deployed
 
@@ -72,20 +95,30 @@ Run commands from the repository root.
 ### PowerShell — primary Windows path
 
 ```powershell
+# run a script that install the cluster and all the components
 ./scripts/powershell/bootstrap.ps1
+
+# run a script that verify the installation and the connectivity to the database
 ./scripts/powershell/verify.ps1
 ```
 
 ### Bash — Linux, macOS, Git Bash, or CI
 
 ```bash
+# run a script that install the cluster and all the components
 bash scripts/bash/bootstrap.sh
+
+# run a script that verify the installation and the connectivity to the database
 bash scripts/bash/verify.sh
 ```
 
 `bootstrap` reuses the named Kind cluster when it already exists and uses `helm upgrade --install`, so it is safe to run again. `verify` waits for the Operator-managed custom resource to become ready and then runs the SQL smoke test through pgBouncer.
 
 ## Expected result
+### verify script success output:
+
+![Physical View Architecture](assets/verify-script-result.png)
+
 
 A successful verification proves all of the following:
 
@@ -124,10 +157,12 @@ These tests are useful demonstrations but are not required to satisfy the assign
 ### NetworkPolicy enforcement
 
 ```powershell
+# script that create a network policy for the cluster and test it
 ./scripts/powershell/test-network-policy.ps1
 ```
 
 ```bash
+# script that create a network policy for the cluster and test it
 bash scripts/bash/test-network-policy.sh
 ```
 
@@ -146,12 +181,15 @@ The pinned Kind environment used for this project enforced these policies in the
 > This test intentionally deletes the current PostgreSQL primary Pod. Run it only in this disposable demonstration environment.
 
 ```powershell
+# script that simulate a pod failure and test the failover and the operator self-healing
 ./scripts/powershell/test-failover.ps1
 ```
 
 ```bash
+# script that simulate a pod failure and test the failover and the operator self-healing
 bash scripts/bash/test-failover.sh
 ```
+![TEST-FAILOVER-ARCHITECTURE](assets/Production_PostgreSQL_on_Your_Laptop_(2)_-_Slide_8.png)
 
 The test measures two separate events:
 
@@ -166,6 +204,9 @@ It then runs the full verification and SQL write/read test through pgBouncer. Th
 
 ![GitHub Actions CI Workflow](assets/github-actions-ci.png)
 
+![GitHub Actions CI Workflow](assets/e2e-verification-log.png)
+
+
 The workflow uses read-only repository permissions, full commit SHAs for reusable Actions, a checksum-verified Kind binary, pinned tool versions, and the repository-local kubeconfig.
 
 ## Manual deployment
@@ -175,6 +216,7 @@ The scripts are the recommended interface. The commands below show the underlyin
 ### 1. Create the local Kubernetes environment
 
 ```powershell
+# PowerShell
 kind create cluster `
   --name energy-team `
   --config infrastructure/kind/cluster.yaml `
@@ -184,9 +226,21 @@ kind create cluster `
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team get nodes
 ```
 
+```bash
+# Bash
+kind create cluster \
+  --name energy-team \
+  --config infrastructure/kind/cluster.yaml \
+  --kubeconfig .tools/kubeconfig \
+  --wait 5m
+
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team get nodes
+```
+
 ### 2. Install Percona Operator
 
 ```powershell
+# PowerShell
 helm repo add percona https://percona.github.io/percona-helm-charts/ --force-update
 helm repo update percona
 
@@ -205,11 +259,32 @@ kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   -n postgres-operator rollout status deployment/percona-operator-pg-operator --timeout=10m
 ```
 
+```bash
+# Bash
+helm repo add percona https://percona.github.io/percona-helm-charts/ --force-update
+helm repo update percona
+
+helm upgrade --install percona-operator percona/pg-operator \
+  --version 3.0.0 \
+  --namespace postgres-operator \
+  --create-namespace \
+  --kube-context kind-energy-team \
+  --kubeconfig .tools/kubeconfig \
+  --values helm/operator-values.yaml \
+  --reset-values \
+  --wait \
+  --timeout 10m
+
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  -n postgres-operator rollout status deployment/percona-operator-pg-operator --timeout=10m
+```
+
 At this stage the controller and CRDs exist, but no PostgreSQL cluster has been requested yet.
 
 ### 3. Create the PostgreSQL cluster
 
 ```powershell
+# PowerShell
 helm upgrade --install energy-pg percona/pg-db `
   --version 3.0.0 `
   --namespace postgres-operator `
@@ -224,21 +299,65 @@ kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   -n postgres-operator get pg,pods,pvc
 ```
 
+```bash
+# Bash
+helm upgrade --install energy-pg percona/pg-db \
+  --version 3.0.0 \
+  --namespace postgres-operator \
+  --kube-context kind-energy-team \
+  --kubeconfig .tools/kubeconfig \
+  --values helm/cluster-values.yaml \
+  --reset-values \
+  --wait \
+  --timeout 15m
+
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  -n postgres-operator get pg,pods,pvc
+```
+
 The `pg-db` chart creates a `PerconaPGCluster` custom resource. The Operator reconciles that desired state into PostgreSQL Pods, Services, TLS resources, generated credentials, PVCs, pgBouncer, and pgBackRest resources.
 
-### 4. Run the SQL proof
+### 4. Run the SQL proof via Kubernetes Job
+The Job executes `smoke-test.sql` (mounted via ConfigMap), which creates the `assignment_smoke_test` table, performs an idempotent upsert (`INSERT ... ON CONFLICT DO UPDATE`), and selects the record to verify end-to-end read and write connectivity through pgBouncer.
 
 ```powershell
+# PowerShell
+
+# Delete previous Job if it exists
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   -n postgres-operator delete job postgres-smoke-test --ignore-not-found
 
+# Apply the Job manifest
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   apply -f tests/smoke-test.yaml
 
+# Wait for Job completion
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   -n postgres-operator wait --for=condition=complete job/postgres-smoke-test --timeout=10m
 
+# Retrieve Job output
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
+  -n postgres-operator logs job/postgres-smoke-test
+```
+
+
+```bash
+# Bash
+
+# Delete previous Job if it exists
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  -n postgres-operator delete job postgres-smoke-test --ignore-not-found
+
+# Apply the Job manifest
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  apply -f tests/smoke-test.yaml
+
+# Wait for Job completion
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  -n postgres-operator wait --for=condition=complete job/postgres-smoke-test --timeout=10m
+
+# Retrieve Job output
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
   -n postgres-operator logs job/postgres-smoke-test
 ```
 
@@ -251,7 +370,14 @@ The automated Job is the primary connection proof. For optional workstation acce
 ### 1. Start the port-forward
 
 ```powershell
+# PowerShell
 kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
+  -n postgres-operator port-forward service/energy-pg-pgbouncer 15432:5432
+```
+
+```bash
+# Bash
+kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
   -n postgres-operator port-forward service/energy-pg-pgbouncer 15432:5432
 ```
 
@@ -259,15 +385,22 @@ Keep this terminal open. Port `15432` avoids collisions with a local PostgreSQL 
 
 ### 2. Read the generated connection fields
 
-In a second PowerShell terminal:
+In a second terminal:
 
 ```powershell
+# PowerShell
 $Secret = kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
   -n postgres-operator get secret energy-pg-pguser-energyapp -o json | ConvertFrom-Json
 
 $DbPassword = [Text.Encoding]::UTF8.GetString(
   [Convert]::FromBase64String($Secret.data.password)
 )
+```
+
+```bash
+# Bash
+DbPassword=$(kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+  -n postgres-operator get secret energy-pg-pguser-energyapp -o jsonpath='{.data.password}' | base64 --decode)
 ```
 
 Use these settings in DBeaver, pgAdmin, VS Code SQLTools, or another PostgreSQL client:
@@ -284,10 +417,17 @@ Use these settings in DBeaver, pgAdmin, VS Code SQLTools, or another PostgreSQL 
 If local `psql` is installed:
 
 ```powershell
+# PowerShell
 $env:PGPASSWORD = $DbPassword
 $env:PGSSLMODE = "require"
 psql --host 127.0.0.1 --port 15432 --username energyapp --dbname energydb --file tests/query.sql
 Remove-Item Env:PGPASSWORD
+```
+
+```bash
+# Bash
+PGPASSWORD="$DbPassword" PGSSLMODE="require" \
+  psql --host 127.0.0.1 --port 15432 --username energyapp --dbname energydb --file tests/query.sql
 ```
 
 `sslmode=require` encrypts the connection but does not validate the self-signed server identity. Production clients should trust the intended CA and use strict certificate verification.
@@ -388,27 +528,6 @@ bash scripts/bash/destroy.sh
 
 Both scripts require typing `DELETE`. For a confirmed disposable environment, use `-Force` in PowerShell or `--force` in Bash.
 
-## Repository layout
-
-```text
-.
-|-- .github/workflows/e2e-ci.yml       # Prepared ephemeral Kind E2E workflow
-|-- helm/
-|   |-- operator-values.yaml           # Namespace-scoped Operator configuration
-|   `-- cluster-values.yaml            # PostgreSQL, pgBouncer, PVC, and backup desired state
-|-- infrastructure/
-|   |-- kind/cluster.yaml              # Pinned three-node Kind topology
-|   `-- k8s/network-policy.yaml        # PostgreSQL and pgBouncer ingress policy
-|-- scripts/
-|   |-- powershell/                    # Primary Windows automation and validation
-|   `-- bash/                          # Linux, macOS, Git Bash, and CI equivalents
-|-- tests/
-|   |-- smoke-test.yaml                # Secret-backed idempotent SQL Job
-|   |-- network-policy-test.yaml       # Authorized and unauthorized policy probes
-|   `-- query.sql                      # Optional workstation query
-|-- ARCHITECTURE.html                  # Interactive architecture and flow map
-`-- README.md
-```
 
 ## Assignment coverage
 
