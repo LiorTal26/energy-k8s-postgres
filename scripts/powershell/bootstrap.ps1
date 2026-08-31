@@ -55,10 +55,10 @@ Write-Host "Checking Kubernetes access..."
 & kubectl --kubeconfig $Kubeconfig --context $KubeContext cluster-info | Out-Null
 Assert-LastExitCode "Kubernetes access check"
 
-& kubectl --kubeconfig $Kubeconfig --context $KubeContext get namespace $Namespace *> $null
-if ($LASTEXITCODE -ne 0) {
+$AllNamespaces = & kubectl --kubeconfig $Kubeconfig --context $KubeContext get namespaces -o jsonpath='{.items[*].metadata.name}'
+if ($AllNamespaces -split '\s+' -notcontains $Namespace) {
     Write-Host "Creating namespace '$Namespace'..."
-    & kubectl --kubeconfig $Kubeconfig --context $KubeContext create namespace $Namespace
+    & kubectl --kubeconfig $Kubeconfig --context $KubeContext create namespace $Namespace | Out-Null
     Assert-LastExitCode "Namespace creation"
 }
 
