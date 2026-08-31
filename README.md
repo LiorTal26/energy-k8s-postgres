@@ -31,14 +31,6 @@ The result is a local engineering demonstration on one workstation. It shows rec
 
 The Kind topology contains one control-plane and two worker nodes. Required Pod anti-affinity places the two PostgreSQL instances on different Kind workers, while pgBouncer, pgBackRest, and the Percona Operator run in dedicated pods.
 
-> [!TIP]
-> ### 🌐 Interactive Blueprint & Live HA Simulator
-> For interactive layer filtering (`Automation`, `Kubernetes`, `Database`, `Storage`, `Validation`), 6 directional traffic flow tracks, and live failover crash simulation, open the interactive portal:
->
-> **👉 [Open Interactive Architecture & System-Flow Portal (ARCHITECTURE.html)](ARCHITECTURE.html)**
->
-> *To view locally: double-click `ARCHITECTURE.html` in your file explorer or run `Start-Process ./ARCHITECTURE.html` in PowerShell (`open ./ARCHITECTURE.html` on macOS / `xdg-open` on Linux).*
-
 ## Repository layout
 
 ```text
@@ -58,7 +50,6 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 |   |-- smoke-test.yaml                # Secret-backed idempotent SQL Job
 |   |-- network-policy-test.yaml       # Authorized and unauthorized policy probes
 |   `-- query.sql                      # Optional workstation query
-|-- ARCHITECTURE.html                  # Interactive architecture and flow map
 `-- README.md
 ```
 
