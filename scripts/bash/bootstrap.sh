@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly CLUSTER_NAME="energy-team"
-readonly KUBE_CONTEXT="kind-${CLUSTER_NAME}"
-readonly NAMESPACE="postgres-operator"
-readonly CHART_VERSION="3.0.0"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly TOOLS_DIRECTORY="${REPOSITORY_ROOT}/.tools"
-readonly PROJECT_KUBECONFIG="${KUBECONFIG:-${TOOLS_DIRECTORY}/kubeconfig}"
+# shellcheck source=scripts/bash/env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 mkdir -p "${TOOLS_DIRECTORY}"
-export HELM_CONFIG_HOME="${TOOLS_DIRECTORY}/helm/config"
-export HELM_CACHE_HOME="${TOOLS_DIRECTORY}/helm/cache"
-export HELM_DATA_HOME="${TOOLS_DIRECTORY}/helm/data"
 
 for command_name in docker kind kubectl helm; do
   command -v "${command_name}" >/dev/null 2>&1 || command -v "${command_name}.exe" >/dev/null 2>&1 || {
@@ -43,34 +34,43 @@ if ! kubectl --kubeconfig "${PROJECT_KUBECONFIG}" --context "${KUBE_CONTEXT}" ge
   kubectl --kubeconfig "${PROJECT_KUBECONFIG}" --context "${KUBE_CONTEXT}" create namespace "${NAMESPACE}"
 fi
 
+HELM_BIN="$(command -v helm || command -v helm.exe || echo helm)"
+
+helm_for_cluster() {
+  (
+    cd "${REPOSITORY_ROOT}"
+    if [[ "${HELM_BIN}" == *.exe* ]] || [[ -f /proc/version && $(cat /proc/version) =~ [Mm]icrosoft ]]; then
+      "${HELM_BIN}" --kubeconfig ".tools/kubeconfig" --kube-context "${KUBE_CONTEXT}" "$@"
+    else
+      "${HELM_BIN}" --kubeconfig "${PROJECT_KUBECONFIG}" --kube-context "${KUBE_CONTEXT}" "$@"
+    fi
+  )
+}
+
 echo "Refreshing the official Percona Helm repository..."
-helm repo add percona https://percona.github.io/percona-helm-charts/ --force-update
-helm repo update percona
+"${HELM_BIN}" repo add percona https://percona.github.io/percona-helm-charts/ --force-update
+"${HELM_BIN}" repo update percona
 
 echo "Installing Percona Operator ${CHART_VERSION}..."
-helm upgrade --install percona-operator percona/pg-operator \
+helm_for_cluster upgrade --install "${OPERATOR_RELEASE}" percona/pg-operator \
   --version "${CHART_VERSION}" \
   --namespace "${NAMESPACE}" \
-  --kube-context "${KUBE_CONTEXT}" \
-  --kubeconfig "${PROJECT_KUBECONFIG}" \
-  --values "${REPOSITORY_ROOT}/helm/operator-values.yaml" \
+  --values "helm/operator-values.yaml" \
   --reset-values \
   --wait \
   --timeout 10m
 
 echo "Validating the Operator Deployment and CRD..."
 kubectl --kubeconfig "${PROJECT_KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" \
-  rollout status deployment/percona-operator-pg-operator --timeout=10m
+  rollout status "deployment/${OPERATOR_DEPLOYMENT}" --timeout=10m
 kubectl --kubeconfig "${PROJECT_KUBECONFIG}" --context "${KUBE_CONTEXT}" \
   get crd perconapgclusters.pgv2.percona.com >/dev/null
 
 echo "Installing PostgreSQL cluster..."
-helm upgrade --install energy-pg percona/pg-db \
+helm_for_cluster upgrade --install "${DATABASE_RELEASE}" percona/pg-db \
   --version "${CHART_VERSION}" \
   --namespace "${NAMESPACE}" \
-  --kube-context "${KUBE_CONTEXT}" \
-  --kubeconfig "${PROJECT_KUBECONFIG}" \
-  --values "${REPOSITORY_ROOT}/helm/cluster-values.yaml" \
+  --values "helm/cluster-values.yaml" \
   --reset-values \
   --wait \
   --timeout 15m

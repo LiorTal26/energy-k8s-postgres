@@ -11,11 +11,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$KubeContext = "kind-energy-team"
-$Namespace = "postgres-operator"
-$ClusterName = "energy-pg"
-$RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Kubeconfig = Join-Path $RepositoryRoot ".tools\kubeconfig"
+. (Join-Path $PSScriptRoot "env.ps1")
+$ClusterName = $DatabaseRelease
 
 if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
     throw "Required command 'kubectl' was not found."
@@ -23,8 +20,6 @@ if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
 if (-not (Test-Path -LiteralPath $Kubeconfig)) {
     throw "Kubeconfig '$Kubeconfig' was not found. Run scripts/powershell/bootstrap.ps1 first."
 }
-
-$KubectlArgs = @("--kubeconfig", $Kubeconfig, "--context", $KubeContext)
 
 function Assert-LastExitCode {
     param([Parameter(Mandatory)][string]$Action)

@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly KUBE_CONTEXT="kind-energy-team"
-readonly NAMESPACE="postgres-operator"
-readonly CLUSTER_NAME="energy-pg"
-readonly OPERATOR_DEPLOYMENT="percona-operator-pg-operator"
-readonly CREDENTIAL_SECRET="energy-pg-pguser-energyapp"
-readonly JOB_NAME="postgres-smoke-test"
+# shellcheck source=scripts/bash/env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 readonly TIMEOUT_MINUTES="${TIMEOUT_MINUTES:-20}"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly TOOLS_DIRECTORY="${REPOSITORY_ROOT}/.tools"
-readonly PROJECT_KUBECONFIG="${KUBECONFIG:-${TOOLS_DIRECTORY}/kubeconfig}"
 
 [[ "${TIMEOUT_MINUTES}" =~ ^[0-9]+$ ]] &&
   (( TIMEOUT_MINUTES >= 1 && TIMEOUT_MINUTES <= 60 )) || {
@@ -34,7 +26,14 @@ kube() {
 }
 
 helm_for_cluster() {
-  "${HELM_BIN}" --kubeconfig "${PROJECT_KUBECONFIG}" --kube-context "${KUBE_CONTEXT}" "$@"
+  (
+    cd "${REPOSITORY_ROOT}"
+    if [[ "${HELM_BIN}" == *.exe* ]] || [[ -f /proc/version && $(cat /proc/version) =~ [Mm]icrosoft ]]; then
+      "${HELM_BIN}" --kubeconfig ".tools/kubeconfig" --kube-context "${KUBE_CONTEXT}" "$@"
+    else
+      "${HELM_BIN}" --kubeconfig "${PROJECT_KUBECONFIG}" --kube-context "${KUBE_CONTEXT}" "$@"
+    fi
+  )
 }
 
 show_smoke_test_diagnostics() {
@@ -67,7 +66,7 @@ for ready_value in "${node_ready_values[@]}"; do
 done
 
 echo "Checking pinned Helm releases..."
-for release_spec in "percona-operator:pg-operator-3.0.0" "energy-pg:pg-db-3.0.0"; do
+for release_spec in "${OPERATOR_RELEASE}:pg-operator-${CHART_VERSION}" "${DATABASE_RELEASE}:pg-db-${CHART_VERSION}"; do
   release="${release_spec%%:*}"
   expected_chart="${release_spec#*:}"
   row="$(helm_for_cluster --namespace "${NAMESPACE}" list --filter "^${release}$" --no-headers)"
@@ -87,9 +86,9 @@ for crd in perconapgclusters.pgv2.percona.com perconapgbackups.pgv2.percona.com 
 done
 kube -n "${NAMESPACE}" rollout status "deployment/${OPERATOR_DEPLOYMENT}" --timeout "${TIMEOUT_MINUTES}m"
 
-echo "Waiting for PerconaPGCluster '${CLUSTER_NAME}' to report ready..."
+echo "Waiting for PerconaPGCluster '${DATABASE_RELEASE}' to report ready..."
 while true; do
-  state="$(kube -n "${NAMESPACE}" get pg "${CLUSTER_NAME}" -o jsonpath='{.status.state}' 2>/dev/null || true)"
+  state="$(kube -n "${NAMESPACE}" get pg "${DATABASE_RELEASE}" -o jsonpath='{.status.state}' 2>/dev/null || true)"
   [[ "${state}" == "ready" ]] && break
 
   if (( SECONDS >= DEADLINE )); then
@@ -103,7 +102,7 @@ done
 
 echo "Checking PostgreSQL, pgBouncer, pgBackRest, PVCs, and Pod placement..."
 pg_pod_lines="$(kube -n "${NAMESPACE}" get pods \
-  -l "postgres-operator.crunchydata.com/cluster=${CLUSTER_NAME},postgres-operator.crunchydata.com/data=postgres" \
+  -l "postgres-operator.crunchydata.com/cluster=${DATABASE_RELEASE},postgres-operator.crunchydata.com/data=postgres" \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.nodeName}{"\t"}{.status.phase}{"\n"}{end}')"
 
 mapfile -t pg_pods <<<"${pg_pod_lines}"
@@ -125,7 +124,7 @@ IFS=$'\t' read -r pg2_name pg2_node pg2_phase <<<"${pg_pods[1]}"
 }
 
 pgbouncer_phase="$(kube -n "${NAMESPACE}" get pods \
-  -l "postgres-operator.crunchydata.com/cluster=${CLUSTER_NAME},postgres-operator.crunchydata.com/role=pgbouncer" \
+  -l "postgres-operator.crunchydata.com/cluster=${DATABASE_RELEASE},postgres-operator.crunchydata.com/role=pgbouncer" \
   -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)"
 [[ "${pgbouncer_phase}" == "Running" ]] || {
   echo "pgBouncer Pod is not Running." >&2
@@ -133,7 +132,7 @@ pgbouncer_phase="$(kube -n "${NAMESPACE}" get pods \
 }
 
 repo_host_phase="$(kube -n "${NAMESPACE}" get pods \
-  -l "postgres-operator.crunchydata.com/cluster=${CLUSTER_NAME},postgres-operator.crunchydata.com/data=pgbackrest" \
+  -l "postgres-operator.crunchydata.com/cluster=${DATABASE_RELEASE},postgres-operator.crunchydata.com/data=pgbackrest" \
   -o jsonpath='{.items[0].status.phase}' 2>/dev/null || true)"
 [[ "${repo_host_phase}" == "Running" ]] || {
   echo "pgBackRest repository host Pod is not Running." >&2
@@ -141,7 +140,7 @@ repo_host_phase="$(kube -n "${NAMESPACE}" get pods \
 }
 
 unbound_pvcs="$(kube -n "${NAMESPACE}" get pvc \
-  -l "postgres-operator.crunchydata.com/cluster=${CLUSTER_NAME}" \
+  -l "postgres-operator.crunchydata.com/cluster=${DATABASE_RELEASE}" \
   -o jsonpath='{range .items[?(@.status.phase!="Bound")]}{.metadata.name}{" "}{end}')"
 [[ -z "${unbound_pvcs// }" ]] || {
   echo "One or more PostgreSQL PVCs are not Bound: ${unbound_pvcs}" >&2

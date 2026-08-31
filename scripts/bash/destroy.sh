@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly CLUSTER_NAME="energy-team"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly KUBECONFIG="${REPOSITORY_ROOT}/.tools/kubeconfig"
+# shellcheck source=scripts/bash/env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
 
 command -v kind >/dev/null 2>&1 || {
   echo "Required command 'kind' was not found." >&2

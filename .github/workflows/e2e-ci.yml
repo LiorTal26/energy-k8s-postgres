@@ -81,16 +81,17 @@ jobs:
       - name: Capture Diagnostics on Failure
         if: failure()
         run: |
+          source scripts/bash/env.sh
           echo "=== Nodes ==="
           kubectl get nodes -o wide || true
           echo "=== Pods & PVCs ==="
-          kubectl -n postgres-operator get pods,pvc -o wide || true
+          kubectl -n "${NAMESPACE}" get pods,pvc -o wide || true
           echo "=== PG Custom Resource ==="
-          kubectl -n postgres-operator describe pg energy-pg || true
+          kubectl -n "${NAMESPACE}" describe pg "${DATABASE_RELEASE}" || true
           echo "=== Operator Logs ==="
-          kubectl -n postgres-operator logs deployment/percona-operator-pg-operator --tail=100 || true
+          kubectl -n "${NAMESPACE}" logs "deployment/${OPERATOR_DEPLOYMENT}" --tail=100 || true
           echo "=== Smoke Test Job Logs ==="
-          kubectl -n postgres-operator logs job/postgres-smoke-test --all-containers=true || true
+          kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" --all-containers=true || true
 
       - name: Cleanup Cluster
         if: always()

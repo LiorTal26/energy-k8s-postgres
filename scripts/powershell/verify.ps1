@@ -8,27 +8,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$KubeContext = "kind-energy-team"
-$Namespace = "postgres-operator"
-$ClusterName = "energy-pg"
-$OperatorDeployment = "percona-operator-pg-operator"
-$CredentialSecret = "energy-pg-pguser-energyapp"
-$JobName = "postgres-smoke-test"
-$RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$ToolsDirectory = Join-Path $RepositoryRoot ".tools"
-$Kubeconfig = Join-Path $ToolsDirectory "kubeconfig"
-
-if (Test-Path -LiteralPath $Kubeconfig) {
-    $KubectlArgs = @("--kubeconfig", $Kubeconfig, "--context", $KubeContext)
-    $HelmArgs = @("--kubeconfig", $Kubeconfig, "--kube-context", $KubeContext)
-} else {
-    $KubectlArgs = @("--context", $KubeContext)
-    $HelmArgs = @("--kube-context", $KubeContext)
-}
-
-$env:HELM_CONFIG_HOME = Join-Path $ToolsDirectory "helm/config"
-$env:HELM_CACHE_HOME = Join-Path $ToolsDirectory "helm/cache"
-$env:HELM_DATA_HOME = Join-Path $ToolsDirectory "helm/data"
+. (Join-Path $PSScriptRoot "env.ps1")
+$ClusterResourceName = $DatabaseRelease
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
@@ -81,8 +62,8 @@ $ReleasesJson = & helm @HelmArgs --namespace $Namespace list -o json | ConvertFr
 Assert-LastExitCode "Listing Helm releases"
 
 $ExpectedReleases = @(
-    @{ Name = "percona-operator"; ExpectedChart = "pg-operator-3.0.0" },
-    @{ Name = "energy-pg";        ExpectedChart = "pg-db-3.0.0" }
+    @{ Name = $OperatorRelease; ExpectedChart = "pg-operator-$ChartVersion" },
+    @{ Name = $DatabaseRelease; ExpectedChart = "pg-db-$ChartVersion" }
 )
 
 foreach ($Expected in $ExpectedReleases) {
@@ -110,12 +91,12 @@ foreach ($Crd in @(
 & kubectl @KubectlArgs -n $Namespace rollout status "deployment/$OperatorDeployment" --timeout "${TimeoutMinutes}m"
 Assert-LastExitCode "Operator deployment rollout status"
 
-Write-Host "Waiting for PerconaPGCluster '$ClusterName' to report ready..."
+Write-Host "Waiting for PerconaPGCluster '$DatabaseRelease' to report ready..."
 $Deadline = (Get-Date).AddMinutes($TimeoutMinutes)
 $ClusterReady = $false
 
 while ((Get-Date) -lt $Deadline) {
-    $State = & kubectl @KubectlArgs -n $Namespace get pg $ClusterName -o jsonpath='{.status.state}' 2>$null
+    $State = & kubectl @KubectlArgs -n $Namespace get pg $DatabaseRelease -o jsonpath='{.status.state}' 2>$null
     if ($LASTEXITCODE -eq 0 -and $State -eq "ready") {
         $ClusterReady = $true
         break
@@ -125,12 +106,12 @@ while ((Get-Date) -lt $Deadline) {
 
 if (-not $ClusterReady) {
     & kubectl @KubectlArgs -n $Namespace get pg,pods,pvc | Out-Host
-    throw "PerconaPGCluster '$ClusterName' did not reach state 'ready' within $TimeoutMinutes minutes."
+    throw "PerconaPGCluster '$DatabaseRelease' did not reach state 'ready' within $TimeoutMinutes minutes."
 }
 
 Write-Host "Checking PostgreSQL, pgBouncer, pgBackRest, PVCs, and Pod placement..."
 $PgPodsJson = & kubectl @KubectlArgs -n $Namespace get pods `
-    -l "postgres-operator.crunchydata.com/cluster=$ClusterName,postgres-operator.crunchydata.com/data=postgres" `
+    -l "postgres-operator.crunchydata.com/cluster=$DatabaseRelease,postgres-operator.crunchydata.com/data=postgres" `
     -o json | ConvertFrom-Json
 Assert-LastExitCode "PostgreSQL Pod lookup"
 
@@ -157,7 +138,7 @@ if ($PgPodRows | Where-Object { $_.Phase -ne "Running" }) {
 }
 
 $PgBouncerPods = & kubectl @KubectlArgs -n $Namespace get pods `
-    -l "postgres-operator.crunchydata.com/cluster=$ClusterName,postgres-operator.crunchydata.com/role=pgbouncer" `
+    -l "postgres-operator.crunchydata.com/cluster=$DatabaseRelease,postgres-operator.crunchydata.com/role=pgbouncer" `
     -o json | ConvertFrom-Json
 Assert-LastExitCode "pgBouncer Pod lookup"
 
@@ -166,7 +147,7 @@ if (-not ($PgBouncerPods.items | Where-Object { $_.status.phase -eq "Running" })
 }
 
 $RepoHostPods = & kubectl @KubectlArgs -n $Namespace get pods `
-    -l "postgres-operator.crunchydata.com/cluster=$ClusterName,postgres-operator.crunchydata.com/data=pgbackrest" `
+    -l "postgres-operator.crunchydata.com/cluster=$DatabaseRelease,postgres-operator.crunchydata.com/data=pgbackrest" `
     -o json | ConvertFrom-Json
 Assert-LastExitCode "pgBackRest repo-host Pod lookup"
 
@@ -175,7 +156,7 @@ if (-not ($RepoHostPods.items | Where-Object { $_.status.phase -eq "Running" }))
 }
 
 $Pvcs = & kubectl @KubectlArgs -n $Namespace get pvc `
-    -l "postgres-operator.crunchydata.com/cluster=$ClusterName" `
+    -l "postgres-operator.crunchydata.com/cluster=$DatabaseRelease" `
     -o json | ConvertFrom-Json
 Assert-LastExitCode "PVC lookup"
 

@@ -8,21 +8,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$KubeContext = "kind-energy-team"
-$Namespace = "postgres-operator"
-$DatabaseService = "energy-pg-pgbouncer"
-$CredentialSecret = "energy-pg-pguser-energyapp"
-$AuthorizedJob = "np-authorized-probe"
-$UnauthorizedJob = "np-unauthorized-probe"
-$RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$ToolsDirectory = Join-Path $RepositoryRoot ".tools"
-$Kubeconfig = Join-Path $ToolsDirectory "kubeconfig"
+. (Join-Path $PSScriptRoot "env.ps1")
 $NetworkPolicyManifest = Join-Path $RepositoryRoot "infrastructure/k8s/network-policy.yaml"
 $ProbeManifest = Join-Path $RepositoryRoot "tests/network-policy-test.yaml"
 
-if (Test-Path -LiteralPath $Kubeconfig) {
-    $KubectlArgs = @("--kubeconfig", $Kubeconfig, "--context", $KubeContext)
-} else {
+if (-not (Test-Path -LiteralPath $Kubeconfig)) {
     throw "Kubeconfig '$Kubeconfig' was not found. Run scripts/powershell/bootstrap.ps1 first."
 }
 

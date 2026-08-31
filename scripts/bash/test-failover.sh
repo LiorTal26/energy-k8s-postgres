@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly KUBE_CONTEXT="kind-energy-team"
-readonly NAMESPACE="postgres-operator"
-readonly CLUSTER_NAME="energy-pg"
+# shellcheck source=scripts/bash/env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
+
 readonly PROMOTION_TIMEOUT_MINUTES="${PROMOTION_TIMEOUT_MINUTES:-5}"
 readonly RECOVERY_TIMEOUT_MINUTES="${RECOVERY_TIMEOUT_MINUTES:-10}"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly PROJECT_KUBECONFIG="${KUBECONFIG:-${REPOSITORY_ROOT}/.tools/kubeconfig}"
+readonly CLUSTER_NAME="${DATABASE_RELEASE}"
 
 for value in "${PROMOTION_TIMEOUT_MINUTES}" "${RECOVERY_TIMEOUT_MINUTES}"; do
   [[ "${value}" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 20 )) || {

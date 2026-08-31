@@ -11,6 +11,7 @@ The result is a local engineering demonstration on one workstation. It shows rec
 
 - [Architecture](#architecture)
 - [Repository layout](#repository-layout)
+- [Global configuration](#global-configuration)
 - [What is deployed](#what-is-deployed)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
@@ -20,7 +21,7 @@ The result is a local engineering demonstration on one workstation. It shows rec
 - [Manual deployment](#manual-deployment)
 - [Interactive SQL and GUI access](#interactive-sql-and-gui-access)
 - [Design decisions](#design-decisions)
-- [Limitations and production evolution](#limitations-and-production-evolution)
+- [Limitations and future improvements (With additional time)](#limitations-and-future-improvements-with-additional-time)
 - [Troubleshooting](#troubleshooting)
 - [Cleanup](#cleanup)
 
@@ -43,6 +44,7 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 ```text
 .
 |-- .github/workflows/e2e-ci.yml       # Prepared ephemeral Kind E2E workflow
+|-- config.env                         # Global project variables (Single Source of Truth)
 |-- helm/
 |   |-- operator-values.yaml           # Namespace-scoped Operator configuration
 |   `-- cluster-values.yaml            # PostgreSQL, pgBouncer, PVC, and backup desired state
@@ -50,8 +52,8 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 |   |-- kind/cluster.yaml              # Pinned three-node Kind topology
 |   `-- k8s/network-policy.yaml        # PostgreSQL and pgBouncer ingress policy
 |-- scripts/
-|   |-- powershell/                    # Primary Windows automation and validation
-|   `-- bash/                          # Linux, macOS, Git Bash, and CI equivalents
+|   |-- powershell/                    # Primary Windows automation, validation, and env loader
+|   `-- bash/                          # Linux, macOS, Git Bash, CI equivalents, and env loader
 |-- tests/
 |   |-- smoke-test.yaml                # Secret-backed idempotent SQL Job
 |   |-- network-policy-test.yaml       # Authorized and unauthorized policy probes
@@ -59,6 +61,28 @@ The Kind topology contains one control-plane and two worker nodes. Required Pod 
 |-- ARCHITECTURE.html                  # Interactive architecture and flow map
 `-- README.md
 ```
+
+## Global configuration
+
+All cluster parameters, namespaces, Helm release names, and test identities are centralized in [`config.env`](config.env) as the project's **Single Source of Truth (SSOT)**:
+
+```env
+CLUSTER_NAME=energy-team
+NAMESPACE=postgres-operator
+DATABASE_RELEASE=energy-pg
+OPERATOR_RELEASE=percona-operator
+OPERATOR_DEPLOYMENT=percona-operator-pg-operator
+CHART_VERSION=3.0.0
+CREDENTIAL_SECRET=energy-pg-pguser-energyapp
+DATABASE_SERVICE=energy-pg-pgbouncer
+JOB_NAME=postgres-smoke-test
+AUTHORIZED_JOB=np-authorized-probe
+UNAUTHORIZED_JOB=np-unauthorized-probe
+```
+
+- **Unified Configuration:** Controls cluster topology, Helm releases, database CR name, and security probe identities.
+- **Automated Propagation:** Automation scripts in PowerShell (`scripts/powershell/env.ps1`) and Bash (`scripts/bash/env.sh`) dynamically import from `config.env`. Modifying a value here updates all Kubernetes contexts, Helm releases, Secret queries, and verification probes across both platforms without editing script code.
+- **Manual CLI Sessions:** Dot-sourcing the loader in your terminal (`. ./scripts/powershell/env.ps1` or `source ./scripts/bash/env.sh`) exports all variables and the repository `KUBECONFIG` directly into your active shell session.
 
 ## What is deployed
 
@@ -85,6 +109,10 @@ The selected component versions are within the [Percona Operator 3.0.0 compatibi
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) compatible with Kubernetes 1.35.
 - [Helm](https://helm.sh/docs/intro/install/).
 - Internet access to the Percona Helm repository and required container registries during the first deployment.
+- **Session Environment:** When running manual commands, initialize your shell variables by dot-sourcing the loader:
+  * PowerShell: `. ./scripts/powershell/env.ps1`
+  * Bash: `source ./scripts/bash/env.sh`
+  *(Automation scripts handle this automatically).*
 
 The scripts check their required commands and fail before deployment if Docker or a dependency is unavailable. All tools must be available on `PATH`; no user-specific installation path is assumed.
 
@@ -213,28 +241,44 @@ The workflow uses read-only repository permissions, full commit SHAs for reusabl
 
 The scripts are the recommended interface. The commands below show the underlying sequence for review and troubleshooting.
 
+### Load environment variables into your terminal
+
+All configuration is driven by `config.env`. You can load all variables and `$KUBECONFIG` into your current terminal session:
+
+```powershell
+# PowerShell
+. ./scripts/powershell/env.ps1
+```
+
+```bash
+# Bash
+source ./scripts/bash/env.sh
+```
+
+---
+
 ### 1. Create the local Kubernetes environment
 
 ```powershell
 # PowerShell
 kind create cluster `
-  --name energy-team `
+  --name $ClusterName `
   --config infrastructure/kind/cluster.yaml `
-  --kubeconfig .tools/kubeconfig `
+  --kubeconfig $Kubeconfig `
   --wait 5m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team get nodes
+kubectl --kubeconfig $Kubeconfig --context $KubeContext get nodes
 ```
 
 ```bash
 # Bash
 kind create cluster \
-  --name energy-team \
+  --name "${CLUSTER_NAME}" \
   --config infrastructure/kind/cluster.yaml \
-  --kubeconfig .tools/kubeconfig \
+  --kubeconfig "${KUBECONFIG}" \
   --wait 5m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team get nodes
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" get nodes
 ```
 
 ### 2. Install Percona Operator
@@ -244,19 +288,18 @@ kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team get nodes
 helm repo add percona https://percona.github.io/percona-helm-charts/ --force-update
 helm repo update percona
 
-helm upgrade --install percona-operator percona/pg-operator `
-  --version 3.0.0 `
-  --namespace postgres-operator `
+helm upgrade --install $OperatorRelease percona/pg-operator `
+  --version $ChartVersion `
+  --namespace $Namespace `
   --create-namespace `
-  --kube-context kind-energy-team `
-  --kubeconfig .tools/kubeconfig `
+  --kube-context $KubeContext `
+  --kubeconfig $Kubeconfig `
   --values helm/operator-values.yaml `
   --reset-values `
   --wait `
   --timeout 10m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator rollout status deployment/percona-operator-pg-operator --timeout=10m
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace rollout status "deployment/$OperatorDeployment" --timeout=10m
 ```
 
 ```bash
@@ -264,19 +307,19 @@ kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
 helm repo add percona https://percona.github.io/percona-helm-charts/ --force-update
 helm repo update percona
 
-helm upgrade --install percona-operator percona/pg-operator \
-  --version 3.0.0 \
-  --namespace postgres-operator \
+helm upgrade --install "${OPERATOR_RELEASE}" percona/pg-operator \
+  --version "${CHART_VERSION}" \
+  --namespace "${NAMESPACE}" \
   --create-namespace \
-  --kube-context kind-energy-team \
-  --kubeconfig .tools/kubeconfig \
+  --kube-context "${KUBE_CONTEXT}" \
+  --kubeconfig "${KUBECONFIG}" \
   --values helm/operator-values.yaml \
   --reset-values \
   --wait \
   --timeout 10m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator rollout status deployment/percona-operator-pg-operator --timeout=10m
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" rollout status "deployment/${OPERATOR_DEPLOYMENT}" --timeout=10m
 ```
 
 At this stage the controller and CRDs exist, but no PostgreSQL cluster has been requested yet.
@@ -285,34 +328,33 @@ At this stage the controller and CRDs exist, but no PostgreSQL cluster has been 
 
 ```powershell
 # PowerShell
-helm upgrade --install energy-pg percona/pg-db `
-  --version 3.0.0 `
-  --namespace postgres-operator `
-  --kube-context kind-energy-team `
-  --kubeconfig .tools/kubeconfig `
+helm upgrade --install $DatabaseRelease percona/pg-db `
+  --version $ChartVersion `
+  --namespace $Namespace `
+  --kube-context $KubeContext `
+  --kubeconfig $Kubeconfig `
   --values helm/cluster-values.yaml `
   --reset-values `
   --wait `
   --timeout 15m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator get pg,pods,pvc
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get pg,pods,pvc
 ```
 
 ```bash
 # Bash
-helm upgrade --install energy-pg percona/pg-db \
-  --version 3.0.0 \
-  --namespace postgres-operator \
-  --kube-context kind-energy-team \
-  --kubeconfig .tools/kubeconfig \
+helm upgrade --install "${DATABASE_RELEASE}" percona/pg-db \
+  --version "${CHART_VERSION}" \
+  --namespace "${NAMESPACE}" \
+  --kube-context "${KUBE_CONTEXT}" \
+  --kubeconfig "${KUBECONFIG}" \
   --values helm/cluster-values.yaml \
   --reset-values \
   --wait \
   --timeout 15m
 
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator get pg,pods,pvc
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" get pg,pods,pvc
 ```
 
 The `pg-db` chart creates a `PerconaPGCluster` custom resource. The Operator reconciles that desired state into PostgreSQL Pods, Services, TLS resources, generated credentials, PVCs, pgBouncer, and pgBackRest resources.
@@ -324,41 +366,36 @@ The Job executes `smoke-test.sql` (mounted via ConfigMap), which creates the `as
 # PowerShell
 
 # Delete previous Job if it exists
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator delete job postgres-smoke-test --ignore-not-found
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace delete "job/$JobName" --ignore-not-found
 
 # Apply the Job manifest
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  apply -f tests/smoke-test.yaml
+kubectl --kubeconfig $Kubeconfig --context $KubeContext apply -f tests/smoke-test.yaml
 
 # Wait for Job completion
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator wait --for=condition=complete job/postgres-smoke-test --timeout=10m
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace wait --for=condition=complete "job/$JobName" --timeout=10m
 
 # Retrieve Job output
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator logs job/postgres-smoke-test
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$JobName"
 ```
-
 
 ```bash
 # Bash
 
 # Delete previous Job if it exists
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator delete job postgres-smoke-test --ignore-not-found
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" delete "job/${JOB_NAME}" --ignore-not-found
 
 # Apply the Job manifest
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
   apply -f tests/smoke-test.yaml
 
 # Wait for Job completion
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator wait --for=condition=complete job/postgres-smoke-test --timeout=10m
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout=10m
 
 # Retrieve Job output
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator logs job/postgres-smoke-test
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" logs "job/${JOB_NAME}"
 ```
 
 The Job receives `pgbouncer-host`, `pgbouncer-port`, `user`, `password`, and `dbname` as separate Secret-backed environment variables. It does not place a password-bearing URI in process arguments.
@@ -371,14 +408,13 @@ The automated Job is the primary connection proof. For optional workstation acce
 
 ```powershell
 # PowerShell
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator port-forward service/energy-pg-pgbouncer 15432:5432
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace port-forward "service/$DatabaseService" 15432:5432
 ```
 
 ```bash
 # Bash
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator port-forward service/energy-pg-pgbouncer 15432:5432
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" port-forward "service/${DATABASE_SERVICE}" 15432:5432
 ```
 
 Keep this terminal open. Port `15432` avoids collisions with a local PostgreSQL service on `5432`.
@@ -389,8 +425,7 @@ In a second terminal:
 
 ```powershell
 # PowerShell
-$Secret = kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team `
-  -n postgres-operator get secret energy-pg-pguser-energyapp -o json | ConvertFrom-Json
+$Secret = kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get secret $CredentialSecret -o json | ConvertFrom-Json
 
 $DbPassword = [Text.Encoding]::UTF8.GetString(
   [Convert]::FromBase64String($Secret.data.password)
@@ -399,8 +434,8 @@ $DbPassword = [Text.Encoding]::UTF8.GetString(
 
 ```bash
 # Bash
-DbPassword=$(kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team \
-  -n postgres-operator get secret energy-pg-pguser-energyapp -o jsonpath='{.data.password}' | base64 --decode)
+DbPassword=$(kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
+  -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}" -o jsonpath='{.data.password}' | base64 --decode)
 ```
 
 Use these settings in DBeaver, pgAdmin, VS Code SQLTools, or another PostgreSQL client:
@@ -456,13 +491,25 @@ The smoke test and optional clients use the pgBouncer Service instead of connect
 
 The application password is not committed. Percona Operator generates the Secret and the test Job consumes only the required keys. In production, Kubernetes Secrets also require encryption at rest, tightly scoped RBAC, rotation, and potentially an external secret manager.
 
+### Centralized configuration (`config.env`)
+
+A single [`config.env`](config.env) file acts as the Single Source of Truth (SSOT). Instead of hardcoding cluster names, release versions, secrets, or namespaces across multiple scripts, both PowerShell (`scripts/powershell/env.ps1`) and Bash (`scripts/bash/env.sh`) load dynamically from this file. This eliminates configuration drift and allows instant customization for different test environments without editing script code.
+
+### Namespace-scoped Operator (Least Privilege)
+
+The Operator is explicitly configured with `watchAllNamespaces: false` in `helm/operator-values.yaml`. It operates solely within the `postgres-operator` namespace, requiring only namespace-scoped `Role` and `RoleBinding` permissions rather than cluster-wide `ClusterRole` permissions. This adheres to security best practices and the Principle of Least Privilege.
+
+### Ingress isolation with NetworkPolicy
+
+Direct ingress to PostgreSQL pods (port 5432) is locked down, allowing incoming connections only from the internal pgBouncer proxy and authorized workloads (`app.kubernetes.io/name: postgres-smoke-test`). Automated security probes (`scripts/powershell/test-network-policy.ps1` and `scripts/bash/test-network-policy.sh`) actively verify both positive authorization and negative timeout blocking.
+
 ### Local persistence and backup
 
 Each database instance has a 1 GiB data PVC and pgBackRest has a 1 GiB repository PVC. This demonstrates persistent-volume and backup configuration, but the volumes remain inside the same Kind/Docker failure domain. Deleting the Kind cluster deletes all database data.
 
-## Limitations and production evolution
+## Limitations and future improvements (With additional time)
 
-Current limitations:
+### Current local limitations:
 
 - One workstation, Docker daemon, disk, network, and power failure domain.
 - Kind local-path storage does not provide multi-zone reattachment, snapshots, storage encryption controls, or disaster recovery.
@@ -472,15 +519,16 @@ Current limitations:
 - Percona component image tags are pinned; a production supply-chain policy should also verify digests, signatures, and SBOMs.
 - Bash and PowerShell are maintained as separate interfaces, which requires both paths to remain tested.
 
-Prioritized production improvements:
+### Prioritized improvements with additional time:
 
-1. Store pgBackRest backups in S3-compatible object storage outside the database failure domain.
-2. Automate restore validation into an isolated cluster and record recovery-point and recovery-time evidence.
-3. Use a production CSI StorageClass with independent failure domains; use Trident only when a supported NetApp backend exists.
-4. Add PMM or Prometheus/Grafana metrics and alerts for replication lag, backup age, storage, saturation, and connection-pool pressure.
-5. Integrate an external secret manager, encryption at rest, and credential-rotation procedures.
+1. **Off-site Object Storage Backups:** Store pgBackRest backups in an S3 / Azure Blob Storage bucket outside the local Kubernetes failure domain.
+2. **Automated Disaster Recovery (DR) Drills:** Automate end-to-end restore validation into an isolated ephemeral cluster, recording verified RPO (Recovery Point Objective) and RTO (Recovery Time Objective).
+3. **Enterprise Storage & Multi-AZ CSI:** Transition from local-path to a cloud-native CSI (e.g. AWS EBS/EFS, Azure Managed Disk, or NetApp Trident when hardware exists) across distinct Availability Zones.
+4. **Full Observability & PMM Integration:** Deploy Percona Monitoring and Management (PMM) or a Prometheus/Grafana stack with alerting on replication lag, connection pool saturation, query latency, and PVC disk utilization.
+5. **Secrets Lifecycle & External KMS:** Integrate HashiCorp Vault / Azure Key Vault with automatic credential rotation, envelope encryption at rest, and short-lived database tokens.
+6. **Supply Chain Security:** Enforce cosign image signature verification, SLSA provenance, and vulnerability scanning in CI before deployment.
 
-Redis, PostgREST, Jenkins, Harbor, Trident, and an umbrella chart are not part of the runtime because the assignment provides no workload or backend that would make those components meaningful.
+Components like Redis, PostgREST, Jenkins, Harbor, and Trident are omitted from this exercise to avoid artificial bloat without an actual production requirement.
 
 ## Troubleshooting
 

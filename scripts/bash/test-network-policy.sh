@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly KUBE_CONTEXT="kind-energy-team"
-readonly NAMESPACE="postgres-operator"
-readonly DATABASE_SERVICE="energy-pg-pgbouncer"
-readonly CREDENTIAL_SECRET="energy-pg-pguser-energyapp"
-readonly AUTHORIZED_JOB="np-authorized-probe"
-readonly UNAUTHORIZED_JOB="np-unauthorized-probe"
+# shellcheck source=scripts/bash/env.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env.sh"
+
 readonly TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-120}"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-readonly PROJECT_KUBECONFIG="${KUBECONFIG:-${REPOSITORY_ROOT}/.tools/kubeconfig}"
 readonly NETWORK_POLICY_MANIFEST="${REPOSITORY_ROOT}/infrastructure/k8s/network-policy.yaml"
 readonly PROBE_MANIFEST="${REPOSITORY_ROOT}/tests/network-policy-test.yaml"
 

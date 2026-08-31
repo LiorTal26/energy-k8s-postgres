@@ -5,20 +5,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$ClusterName = "energy-team"
-$KubeContext = "kind-$ClusterName"
-$Namespace = "postgres-operator"
-$OperatorRelease = "percona-operator"
-$DatabaseRelease = "energy-pg"
-$ChartVersion = "3.0.0"
-$RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$ToolsDirectory = Join-Path $RepositoryRoot ".tools"
-$Kubeconfig = Join-Path $ToolsDirectory "kubeconfig"
+. (Join-Path $PSScriptRoot "env.ps1")
 
 New-Item -ItemType Directory -Force -Path $ToolsDirectory | Out-Null
-$env:HELM_CONFIG_HOME = Join-Path $ToolsDirectory "helm/config"
-$env:HELM_CACHE_HOME = Join-Path $ToolsDirectory "helm/cache"
-$env:HELM_DATA_HOME = Join-Path $ToolsDirectory "helm/data"
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)

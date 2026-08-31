@@ -6,9 +6,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ClusterName = "energy-team"
-$RepositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Kubeconfig = Join-Path $RepositoryRoot ".tools\kubeconfig"
+. (Join-Path $PSScriptRoot "env.ps1")
 
 if (-not (Get-Command kind -ErrorAction SilentlyContinue)) {
     throw "Required command 'kind' was not found."
