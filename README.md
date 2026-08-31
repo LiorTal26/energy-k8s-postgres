@@ -532,9 +532,12 @@ Components like Redis, PostgREST, Jenkins, Harbor, and Trident are omitted from 
 
 ## Troubleshooting
 
+Ensure you have loaded the session variables (`. ./scripts/powershell/env.ps1` in PowerShell, or `source ./scripts/bash/env.sh` in Bash) before running troubleshooting commands.
+
 ### Docker is unavailable
 
 ```powershell
+# PowerShell / Bash
 docker info
 ```
 
@@ -543,10 +546,19 @@ Start Docker Desktop and confirm it is using Linux containers.
 ### PostgreSQL does not reach `ready`
 
 ```powershell
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator get pg,pods,pvc
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator describe pg energy-pg
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator logs deployment/percona-operator-pg-operator --all-containers
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator get events --sort-by=.lastTimestamp
+# PowerShell
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get pg,pods,pvc
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe pg $DatabaseRelease
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "deployment/$OperatorDeployment" --all-containers
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get events --sort-by=.lastTimestamp
+```
+
+```bash
+# Bash
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get pg,pods,pvc
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe pg "${DATABASE_RELEASE}"
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "deployment/${OPERATOR_DEPLOYMENT}" --all-containers
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get events --sort-by=.lastTimestamp
 ```
 
 Typical local causes are insufficient Docker memory or disk, restricted image pulls, or an unbound PVC.
@@ -554,12 +566,38 @@ Typical local causes are insufficient Docker memory or disk, restricted image pu
 ### SQL smoke test fails
 
 ```powershell
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator describe job postgres-smoke-test
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator logs job/postgres-smoke-test --all-containers
-kubectl --kubeconfig .tools/kubeconfig --context kind-energy-team -n postgres-operator get secret energy-pg-pguser-energyapp
+# PowerShell
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe "job/$JobName"
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$JobName" --all-containers
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get secret $CredentialSecret
+```
+
+```bash
+# Bash
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe "job/${JOB_NAME}"
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${JOB_NAME}" --all-containers
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}"
 ```
 
 The final command confirms that the Secret exists without printing its values.
+
+### NetworkPolicy troubleshooting
+
+```powershell
+# PowerShell
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get netpol
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe netpol
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$AuthorizedJob"
+kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$UnauthorizedJob"
+```
+
+```bash
+# Bash
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get netpol
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe netpol
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${AUTHORIZED_JOB}"
+kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${UNAUTHORIZED_JOB}"
+```
 
 ## Cleanup
 

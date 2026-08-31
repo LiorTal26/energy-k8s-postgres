@@ -9,7 +9,6 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 . (Join-Path $PSScriptRoot "env.ps1")
-$ClusterResourceName = $DatabaseRelease
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
@@ -58,7 +57,7 @@ if ($ValidNodes.Count -ne 3 -or ($ValidNodes | Where-Object { -not $_.Ready })) 
 }
 
 Write-Host "Checking pinned Helm releases..."
-$ReleasesJson = & helm @HelmArgs --namespace $Namespace list -o json | ConvertFrom-Json
+$ReleasesJson = & helm @HelmArgs list --namespace $Namespace -o json | ConvertFrom-Json
 Assert-LastExitCode "Listing Helm releases"
 
 $ExpectedReleases = @(
