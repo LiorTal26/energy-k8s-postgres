@@ -176,11 +176,11 @@ The environment was validated end-to-end locally and in remote CI:
 
 - **Local Windows & Linux / Git Bash:** PowerShell and Bash bootstrap, verification, Pod failover, and NetworkPolicy enforcement executed with exit code 0.
 - **GitHub Actions E2E CI Suite:** Automated multi-node Kind workflow passed all 8 pipeline steps (bootstrap, SQL verification, Patroni failover, NetworkPolicy negative & positive probes, and cluster teardown).
-- **Idempotency:** Verification passed multiple consecutive times against the live cluster.
+- **Idempotency:** Verification and bootstrap workflows passed multiple consecutive runs without errors or state drift (safe to execute repeatedly).
 
 ## Optional validation
 
-These tests are useful demonstrations but are not required to satisfy the assignment.
+These tests are useful demonstrations of network policy enforcement and pod failover.
 
 ### NetworkPolicy enforcement
 
@@ -243,7 +243,7 @@ The scripts are the recommended interface. The commands below show the underlyin
 
 ### Load environment variables into your terminal
 
-All configuration is driven by `config.env`. You can load all variables and `$KUBECONFIG` into your current terminal session:
+All configuration is driven by `config.env`. Loading variables exports `$KUBECONFIG` (pointing to `.tools/kubeconfig` with the `kind-energy-team` context), allowing all subsequent `kubectl` and `helm` commands to run directly without repetitive context flags:
 
 ```powershell
 # PowerShell
@@ -267,7 +267,7 @@ kind create cluster `
   --kubeconfig $Kubeconfig `
   --wait 5m
 
-kubectl --kubeconfig $Kubeconfig --context $KubeContext get nodes
+kubectl get nodes
 ```
 
 ```bash
@@ -278,7 +278,7 @@ kind create cluster \
   --kubeconfig "${KUBECONFIG}" \
   --wait 5m
 
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" get nodes
+kubectl get nodes
 ```
 
 ### 2. Install Percona Operator
@@ -292,14 +292,12 @@ helm upgrade --install $OperatorRelease percona/pg-operator `
   --version $ChartVersion `
   --namespace $Namespace `
   --create-namespace `
-  --kube-context $KubeContext `
-  --kubeconfig $Kubeconfig `
   --values helm/operator-values.yaml `
   --reset-values `
   --wait `
   --timeout 10m
 
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace rollout status "deployment/$OperatorDeployment" --timeout=10m
+kubectl -n $Namespace rollout status "deployment/$OperatorDeployment" --timeout=10m
 ```
 
 ```bash
@@ -311,15 +309,12 @@ helm upgrade --install "${OPERATOR_RELEASE}" percona/pg-operator \
   --version "${CHART_VERSION}" \
   --namespace "${NAMESPACE}" \
   --create-namespace \
-  --kube-context "${KUBE_CONTEXT}" \
-  --kubeconfig "${KUBECONFIG}" \
   --values helm/operator-values.yaml \
   --reset-values \
   --wait \
   --timeout 10m
 
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" rollout status "deployment/${OPERATOR_DEPLOYMENT}" --timeout=10m
+kubectl -n "${NAMESPACE}" rollout status "deployment/${OPERATOR_DEPLOYMENT}" --timeout=10m
 ```
 
 At this stage the controller and CRDs exist, but no PostgreSQL cluster has been requested yet.
@@ -331,14 +326,12 @@ At this stage the controller and CRDs exist, but no PostgreSQL cluster has been 
 helm upgrade --install $DatabaseRelease percona/pg-db `
   --version $ChartVersion `
   --namespace $Namespace `
-  --kube-context $KubeContext `
-  --kubeconfig $Kubeconfig `
   --values helm/cluster-values.yaml `
   --reset-values `
   --wait `
   --timeout 15m
 
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get pg,pods,pvc
+kubectl -n $Namespace get pg,pods,pvc
 ```
 
 ```bash
@@ -346,15 +339,12 @@ kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get pg,pod
 helm upgrade --install "${DATABASE_RELEASE}" percona/pg-db \
   --version "${CHART_VERSION}" \
   --namespace "${NAMESPACE}" \
-  --kube-context "${KUBE_CONTEXT}" \
-  --kubeconfig "${KUBECONFIG}" \
   --values helm/cluster-values.yaml \
   --reset-values \
   --wait \
   --timeout 15m
 
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" get pg,pods,pvc
+kubectl -n "${NAMESPACE}" get pg,pods,pvc
 ```
 
 The `pg-db` chart creates a `PerconaPGCluster` custom resource. The Operator reconciles that desired state into PostgreSQL Pods, Services, TLS resources, generated credentials, PVCs, pgBouncer, and pgBackRest resources.
@@ -366,36 +356,32 @@ The Job executes `smoke-test.sql` (mounted via ConfigMap), which creates the `as
 # PowerShell
 
 # Delete previous Job if it exists
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace delete "job/$JobName" --ignore-not-found
+kubectl -n $Namespace delete "job/$JobName" --ignore-not-found
 
 # Apply the Job manifest
-kubectl --kubeconfig $Kubeconfig --context $KubeContext apply -f tests/smoke-test.yaml
+kubectl apply -f tests/smoke-test.yaml
 
 # Wait for Job completion
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace wait --for=condition=complete "job/$JobName" --timeout=10m
+kubectl -n $Namespace wait --for=condition=complete "job/$JobName" --timeout=10m
 
 # Retrieve Job output
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$JobName"
+kubectl -n $Namespace logs "job/$JobName"
 ```
 
 ```bash
 # Bash
 
 # Delete previous Job if it exists
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" delete "job/${JOB_NAME}" --ignore-not-found
+kubectl -n "${NAMESPACE}" delete "job/${JOB_NAME}" --ignore-not-found
 
 # Apply the Job manifest
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  apply -f tests/smoke-test.yaml
+kubectl apply -f tests/smoke-test.yaml
 
 # Wait for Job completion
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout=10m
+kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${JOB_NAME}" --timeout=10m
 
 # Retrieve Job output
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" logs "job/${JOB_NAME}"
+kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}"
 ```
 
 The Job receives `pgbouncer-host`, `pgbouncer-port`, `user`, `password`, and `dbname` as separate Secret-backed environment variables. It does not place a password-bearing URI in process arguments.
@@ -408,13 +394,12 @@ The automated Job is the primary connection proof. For optional workstation acce
 
 ```powershell
 # PowerShell
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace port-forward "service/$DatabaseService" 15432:5432
+kubectl -n $Namespace port-forward "service/$DatabaseService" 15432:5432
 ```
 
 ```bash
 # Bash
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" port-forward "service/${DATABASE_SERVICE}" 15432:5432
+kubectl -n "${NAMESPACE}" port-forward "service/${DATABASE_SERVICE}" 15432:5432
 ```
 
 Keep this terminal open. Port `15432` avoids collisions with a local PostgreSQL service on `5432`.
@@ -425,7 +410,7 @@ In a second terminal:
 
 ```powershell
 # PowerShell
-$Secret = kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get secret $CredentialSecret -o json | ConvertFrom-Json
+$Secret = kubectl -n $Namespace get secret $CredentialSecret -o json | ConvertFrom-Json
 
 $DbPassword = [Text.Encoding]::UTF8.GetString(
   [Convert]::FromBase64String($Secret.data.password)
@@ -434,8 +419,7 @@ $DbPassword = [Text.Encoding]::UTF8.GetString(
 
 ```bash
 # Bash
-DbPassword=$(kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" \
-  -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}" -o jsonpath='{.data.password}' | base64 --decode)
+DbPassword=$(kubectl -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}" -o jsonpath='{.data.password}' | base64 --decode)
 ```
 
 Use these settings in DBeaver, pgAdmin, VS Code SQLTools, or another PostgreSQL client:
@@ -471,7 +455,7 @@ PGPASSWORD="$DbPassword" PGSSLMODE="require" \
 
 ### Kind for the local environment
 
-Kind provides a small declarative multi-node topology that is disposable and CI-friendly. Percona tests Minikube and major managed Kubernetes platforms rather than Kind specifically, so this project treats Kind as a local portability choice, not an officially validated Percona platform.
+Kind (Kubernetes in Docker) was chosen because it provisions a declarative multi-node cluster (one control-plane and two workers) using lightweight Docker containers as nodes. This allows enforcing realistic `podAntiAffinity` rules between PostgreSQL instances on a single workstation with low memory overhead, fast startup times, and seamless GitHub Actions CI integration.
 
 ### Official Helm charts with local values
 
@@ -548,18 +532,18 @@ Start Docker Desktop and confirm it is using Linux containers.
 
 ```powershell
 # PowerShell
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get pg,pods,pvc
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe pg $DatabaseRelease
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "deployment/$OperatorDeployment" --all-containers
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get events --sort-by=.lastTimestamp
+kubectl -n $Namespace get pg,pods,pvc
+kubectl -n $Namespace describe pg $DatabaseRelease
+kubectl -n $Namespace logs "deployment/$OperatorDeployment" --all-containers
+kubectl -n $Namespace get events --sort-by=.lastTimestamp
 ```
 
 ```bash
 # Bash
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get pg,pods,pvc
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe pg "${DATABASE_RELEASE}"
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "deployment/${OPERATOR_DEPLOYMENT}" --all-containers
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get events --sort-by=.lastTimestamp
+kubectl -n "${NAMESPACE}" get pg,pods,pvc
+kubectl -n "${NAMESPACE}" describe pg "${DATABASE_RELEASE}"
+kubectl -n "${NAMESPACE}" logs "deployment/${OPERATOR_DEPLOYMENT}" --all-containers
+kubectl -n "${NAMESPACE}" get events --sort-by=.lastTimestamp
 ```
 
 Typical local causes are insufficient Docker memory or disk, restricted image pulls, or an unbound PVC.
@@ -568,16 +552,16 @@ Typical local causes are insufficient Docker memory or disk, restricted image pu
 
 ```powershell
 # PowerShell
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe "job/$JobName"
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$JobName" --all-containers
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get secret $CredentialSecret
+kubectl -n $Namespace describe "job/$JobName"
+kubectl -n $Namespace logs "job/$JobName" --all-containers
+kubectl -n $Namespace get secret $CredentialSecret
 ```
 
 ```bash
 # Bash
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe "job/${JOB_NAME}"
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${JOB_NAME}" --all-containers
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}"
+kubectl -n "${NAMESPACE}" describe "job/${JOB_NAME}"
+kubectl -n "${NAMESPACE}" logs "job/${JOB_NAME}" --all-containers
+kubectl -n "${NAMESPACE}" get secret "${CREDENTIAL_SECRET}"
 ```
 
 The final command confirms that the Secret exists without printing its values.
@@ -586,18 +570,18 @@ The final command confirms that the Secret exists without printing its values.
 
 ```powershell
 # PowerShell
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace get netpol
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace describe netpol
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$AuthorizedJob"
-kubectl --kubeconfig $Kubeconfig --context $KubeContext -n $Namespace logs "job/$UnauthorizedJob"
+kubectl -n $Namespace get netpol
+kubectl -n $Namespace describe netpol
+kubectl -n $Namespace logs "job/$AuthorizedJob"
+kubectl -n $Namespace logs "job/$UnauthorizedJob"
 ```
 
 ```bash
 # Bash
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" get netpol
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" describe netpol
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${AUTHORIZED_JOB}"
-kubectl --kubeconfig "${KUBECONFIG}" --context "${KUBE_CONTEXT}" -n "${NAMESPACE}" logs "job/${UNAUTHORIZED_JOB}"
+kubectl -n "${NAMESPACE}" get netpol
+kubectl -n "${NAMESPACE}" describe netpol
+kubectl -n "${NAMESPACE}" logs "job/${AUTHORIZED_JOB}"
+kubectl -n "${NAMESPACE}" logs "job/${UNAUTHORIZED_JOB}"
 ```
 
 ## Cleanup
